@@ -13,7 +13,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
-import { MatchEventType, MatchStatus } from '@/types';
+import { MatchEvent, MatchEventType, MatchStatus } from '@/types';
 import { formatDate } from '@/lib/utils';
 
 export default function AdminMatchDetailPage() {
@@ -37,6 +37,8 @@ export default function AdminMatchDetailPage() {
   // Score states
   const [homeScore, setHomeScore] = useState<number>(match?.home_score ?? 0);
   const [awayScore, setAwayScore] = useState<number>(match?.away_score ?? 0);
+  const [penaltyHomeScore, setPenaltyHomeScore] = useState<number | undefined>(match?.penalty_home_score);
+  const [penaltyAwayScore, setPenaltyAwayScore] = useState<number | undefined>(match?.penalty_away_score);
   const [status, setStatus] = useState<MatchStatus>(match?.status ?? 'completed');
   const [notes, setNotes] = useState<string>(match?.notes ?? '');
   const [scoreSaved, setScoreSaved] = useState(false);
@@ -66,6 +68,7 @@ export default function AdminMatchDetailPage() {
   const tournament = tournaments.find((t) => t.id === match.tournament_id);
   const homeTeam = teams.find((t) => t.id === match.home_team_id);
   const awayTeam = teams.find((t) => t.id === match.away_team_id);
+  const isKnockoutMatch = match.stage === 'quarter_final' || match.stage === 'semi_final' || match.stage === 'final' || tournament?.format === 'knockout';
 
   const profilesMap = new Map(profiles.map((p) => [p.id, p]));
 
@@ -88,7 +91,7 @@ export default function AdminMatchDetailPage() {
 
   const handleSaveScore = (e: React.FormEvent) => {
     e.preventDefault();
-    updateMatchScore(match.id, homeScore, awayScore, status, notes);
+    updateMatchScore(match.id, homeScore, awayScore, status, notes, penaltyHomeScore, penaltyAwayScore);
     setScoreSaved(true);
     setTimeout(() => setScoreSaved(false), 2500);
   };
@@ -107,18 +110,41 @@ export default function AdminMatchDetailPage() {
       notes: eventNotes.trim() || undefined,
     });
 
-    // If goal event, also sync the local score state
-    if (eventType === 'goal') {
+    // Sync local score state
+    if (eventType === 'goal' || eventType === 'penalty') {
       if (eventTeamId === match.home_team_id) {
         setHomeScore((prev) => prev + 1);
       } else {
         setAwayScore((prev) => prev + 1);
+      }
+    } else if (eventType === 'own_goal') {
+      if (eventTeamId === match.home_team_id) {
+        setAwayScore((prev) => prev + 1);
+      } else {
+        setHomeScore((prev) => prev + 1);
       }
     }
 
     setEventNotes('');
     setEventPlayerId('');
     setEventAssistId('');
+  };
+
+  const handleRemoveEvent = (ev: MatchEvent) => {
+    removeMatchEvent(ev.id);
+    if (ev.event_type === 'goal' || ev.event_type === 'penalty') {
+      if (ev.team_id === match.home_team_id) {
+        setHomeScore((prev) => Math.max(0, prev - 1));
+      } else {
+        setAwayScore((prev) => Math.max(0, prev - 1));
+      }
+    } else if (ev.event_type === 'own_goal') {
+      if (ev.team_id === match.home_team_id) {
+        setAwayScore((prev) => Math.max(0, prev - 1));
+      } else {
+        setHomeScore((prev) => Math.max(0, prev - 1));
+      }
+    }
   };
 
   return (
@@ -265,6 +291,43 @@ export default function AdminMatchDetailPage() {
           </div>
         </div>
 
+        {/* Penalty Shootout Controls (For Knockout Matches or Draws) */}
+        {(isKnockoutMatch || homeScore === awayScore) && (
+          <div className="p-4 rounded-2xl border border-amber-500/30 bg-amber-950/20 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">
+                Penalty Shootout (Tiebreaker)
+              </span>
+              <span className="text-[11px] text-zinc-400">Required if scores are tied in knockout</span>
+            </div>
+            <div className="flex items-center justify-center gap-6">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-zinc-300 font-semibold">{homeTeam?.name}:</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={penaltyHomeScore ?? ''}
+                  onChange={(e) => setPenaltyHomeScore(e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)))}
+                  placeholder="0"
+                  className="h-10 w-16 rounded-xl border border-zinc-700 bg-zinc-900 font-mono text-xl font-bold text-center text-amber-400 focus:outline-none"
+                />
+              </div>
+              <span className="font-mono text-zinc-500 font-bold">:</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  value={penaltyAwayScore ?? ''}
+                  onChange={(e) => setPenaltyAwayScore(e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)))}
+                  placeholder="0"
+                  className="h-10 w-16 rounded-xl border border-zinc-700 bg-zinc-900 font-mono text-xl font-bold text-center text-amber-400 focus:outline-none"
+                />
+                <span className="text-xs text-zinc-300 font-semibold">:{awayTeam?.name}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Match Notes */}
         <div>
           <label className="block text-xs font-semibold text-zinc-300 mb-1">
@@ -318,7 +381,9 @@ export default function AdminMatchDetailPage() {
                 onChange={(e) => setEventType(e.target.value as MatchEventType)}
                 className="w-full rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
               >
-                <option value="goal">⚽ Goal Scored</option>
+                <option value="goal">⚽ Regular Goal</option>
+                <option value="penalty">🎯 Penalty Goal</option>
+                <option value="own_goal">🤦 Own Goal (for opposing team)</option>
                 <option value="yellow_card">🟨 Yellow Card</option>
                 <option value="red_card">🟥 Red Card</option>
               </select>
@@ -462,6 +527,12 @@ export default function AdminMatchDetailPage() {
                           {ev.event_type === 'goal' && (
                             <span className="text-emerald-400 font-bold">⚽ Goal</span>
                           )}
+                          {ev.event_type === 'penalty' && (
+                            <span className="text-teal-400 font-bold">🎯 Penalty Goal</span>
+                          )}
+                          {ev.event_type === 'own_goal' && (
+                            <span className="text-rose-400 font-bold">🤦 Own Goal</span>
+                          )}
                           {ev.event_type === 'yellow_card' && (
                             <span className="text-amber-400 font-bold">🟨 Yellow Card</span>
                           )}
@@ -485,7 +556,7 @@ export default function AdminMatchDetailPage() {
                     </div>
 
                     <button
-                      onClick={() => removeMatchEvent(ev.id)}
+                      onClick={() => handleRemoveEvent(ev)}
                       title="Delete event"
                       className="p-1 rounded text-zinc-500 hover:text-rose-400 hover:bg-zinc-800 transition-colors"
                     >

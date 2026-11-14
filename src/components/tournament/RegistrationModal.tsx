@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, CheckCircle, ShieldCheck, AlertCircle } from 'lucide-react';
+import { X, CheckCircle, ShieldCheck, AlertCircle, CreditCard } from 'lucide-react';
 import { useStore } from '@/lib/store';
-import { Tournament } from '@/types';
+import { PaymentStatus, Tournament } from '@/types';
 import { formatCurrency } from '@/lib/utils';
 
 interface RegistrationModalProps {
@@ -20,6 +20,7 @@ export function RegistrationModal({
   const { currentUser, teams, registrations, registerTeamForTournament } = useStore();
 
   const [selectedTeamId, setSelectedTeamId] = useState('');
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('paid');
   const [notes, setNotes] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState('');
@@ -52,7 +53,7 @@ export function RegistrationModal({
       return;
     }
 
-    registerTeamForTournament(tournament.id, teamIdToRegister, notes);
+    registerTeamForTournament(tournament.id, teamIdToRegister, notes, paymentStatus);
     setIsSuccess(true);
   };
 
@@ -154,6 +155,42 @@ export function RegistrationModal({
                 placeholder="e.g. Primary kit: Red/White. Full 16-player squad verified."
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-800 p-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500"
               />
+            </div>
+
+            {/* Entry Fee Settlement Option */}
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950/70 p-3.5 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-zinc-200 flex items-center gap-1.5">
+                  <CreditCard className="h-4 w-4 text-emerald-400" />
+                  Entry Fee Settlement: {formatCurrency(tournament.entry_fee)}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setPaymentStatus('paid')}
+                  className={`p-2.5 rounded-lg border text-left text-xs transition-all ${
+                    paymentStatus === 'paid'
+                      ? 'border-emerald-500 bg-emerald-950/40 text-emerald-300 font-bold'
+                      : 'border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  <div className="font-bold">Pay Entry Fee Now</div>
+                  <div className="text-[10px] text-zinc-400 mt-0.5">Instant online checkout</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentStatus('unpaid')}
+                  className={`p-2.5 rounded-lg border text-left text-xs transition-all ${
+                    paymentStatus === 'unpaid'
+                      ? 'border-amber-500 bg-amber-950/40 text-amber-300 font-bold'
+                      : 'border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  <div className="font-bold">Pay Upon Approval</div>
+                  <div className="text-[10px] text-zinc-400 mt-0.5">Settle later / cash</div>
+                </button>
+              </div>
             </div>
 
             <div className="p-3 rounded-xl border border-zinc-800 bg-zinc-950/60 text-xs text-zinc-400 flex items-start gap-2.5">

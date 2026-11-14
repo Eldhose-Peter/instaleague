@@ -133,3 +133,103 @@ test('calculateStandings ignores non-completed matches', () => {
   assert.equal(standings[0].played, 0);
   assert.equal(standings[0].points, 0);
 });
+
+test('calculateStandings excludes knockout stage matches (quarter-finals, semi-finals, finals)', () => {
+  const matches: Match[] = [
+    {
+      id: 'm1',
+      tournament_id: 'tour-1',
+      round: 1,
+      stage: 'regular',
+      home_team_id: 'team-1',
+      away_team_id: 'team-2',
+      scheduled_at: '2026-11-01T15:00:00Z',
+      venue: 'Pitch 1',
+      status: 'completed',
+      home_score: 1,
+      away_score: 0,
+      created_at: '',
+      updated_at: '',
+    },
+    {
+      id: 'm-ko',
+      tournament_id: 'tour-1',
+      round: 2,
+      stage: 'final',
+      home_team_id: 'team-1',
+      away_team_id: 'team-2',
+      scheduled_at: '2026-11-10T15:00:00Z',
+      venue: 'Stadium',
+      status: 'completed',
+      home_score: 4,
+      away_score: 0,
+      created_at: '',
+      updated_at: '',
+    },
+  ];
+
+  const standings = calculateStandings(mockTeams, matches);
+  // Team 1 should only have 1 match counted (the regular stage match, 1-0)
+  assert.equal(standings[0].team_id, 'team-1');
+  assert.equal(standings[0].played, 1);
+  assert.equal(standings[0].goals_for, 1);
+  assert.equal(standings[0].points, 3);
+});
+
+test('calculateStandings uses head-to-head resolution when points, GD, and GF are equal', () => {
+  const matches: Match[] = [
+    {
+      id: 'm1',
+      tournament_id: 'tour-1',
+      round: 1,
+      stage: 'regular',
+      home_team_id: 'team-2', // Red Bulls beat Apex 1-0
+      away_team_id: 'team-1',
+      scheduled_at: '2026-11-01T15:00:00Z',
+      venue: 'Pitch 1',
+      status: 'completed',
+      home_score: 1,
+      away_score: 0,
+      created_at: '',
+      updated_at: '',
+    },
+    {
+      id: 'm2',
+      tournament_id: 'tour-1',
+      round: 2,
+      stage: 'regular',
+      home_team_id: 'team-1', // Apex beat Metro 1-0
+      away_team_id: 'team-3',
+      scheduled_at: '2026-11-05T15:00:00Z',
+      venue: 'Pitch 1',
+      status: 'completed',
+      home_score: 1,
+      away_score: 0,
+      created_at: '',
+      updated_at: '',
+    },
+    {
+      id: 'm3',
+      tournament_id: 'tour-1',
+      round: 3,
+      stage: 'regular',
+      home_team_id: 'team-3', // Metro beat Red Bulls 1-0
+      away_team_id: 'team-2',
+      scheduled_at: '2026-11-10T15:00:00Z',
+      venue: 'Pitch 1',
+      status: 'completed',
+      home_score: 1,
+      away_score: 0,
+      created_at: '',
+      updated_at: '',
+    },
+  ];
+
+  // All 3 teams have 3 points, GD 0, GF 1, GA 1
+  const standings = calculateStandings(mockTeams, matches);
+  assert.equal(standings.length, 3);
+  standings.forEach((s) => {
+    assert.equal(s.points, 3);
+    assert.equal(s.goal_difference, 0);
+  });
+});

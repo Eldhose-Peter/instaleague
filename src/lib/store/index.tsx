@@ -8,6 +8,7 @@ import {
   Match,
   MatchEvent,
   MatchStatus,
+  PaymentStatus,
   PlayerPosition,
   Profile,
   RegistrationStatus,
@@ -74,11 +75,16 @@ interface StoreContextType {
   registerTeamForTournament: (
     tournamentId: string,
     teamId: string,
-    notes?: string
+    notes?: string,
+    paymentStatus?: PaymentStatus
   ) => TournamentRegistration;
   updateRegistrationStatus: (
     registrationId: string,
     status: RegistrationStatus
+  ) => void;
+  updatePaymentStatus: (
+    registrationId: string,
+    status: PaymentStatus
   ) => void;
   generateFixturesForTournament: (
     tournamentId: string,
@@ -89,7 +95,9 @@ interface StoreContextType {
     homeScore: number,
     awayScore: number,
     status?: MatchStatus,
-    notes?: string
+    notes?: string,
+    penaltyHomeScore?: number,
+    penaltyAwayScore?: number
   ) => void;
   addMatchEvent: (
     event: Omit<MatchEvent, 'id' | 'created_at'>
@@ -379,7 +387,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const registerTeamForTournament = (
     tournamentId: string,
     teamId: string,
-    notes?: string
+    notes?: string,
+    paymentStatus: PaymentStatus = 'unpaid'
   ): TournamentRegistration => {
     // Check if already registered
     const existing = registrations.find(
@@ -392,7 +401,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       tournament_id: tournamentId,
       team_id: teamId,
       status: 'pending',
-      payment_status: 'unpaid',
+      payment_status: paymentStatus,
       notes: notes || 'Application submitted via Instaleague portal.',
       registered_at: new Date().toISOString(),
     };
@@ -454,6 +463,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         ...prev,
       ]);
     }
+  };
+
+  const updatePaymentStatus = (
+    registrationId: string,
+    status: PaymentStatus
+  ) => {
+    setRegistrations((prev) =>
+      prev.map((r) => (r.id === registrationId ? { ...r, payment_status: status } : r))
+    );
   };
 
   const generateFixturesForTournament = (
@@ -531,28 +549,106 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     homeScore: number,
     awayScore: number,
     status: MatchStatus = 'completed',
-    notes?: string
+    notes?: string,
+    penaltyHomeScore?: number,
+    penaltyAwayScore?: number
   ) => {
-    setMatches((prev) =>
-      prev.map((m) =>
-        m.id === matchId
-          ? {
-              ...m,
-              home_score: homeScore,
-              away_score: awayScore,
-              status,
-              notes: notes !== undefined ? notes : m.notes,
-              updated_at: new Date().toISOString(),
+    let targetHomeTeamId: string | null = null;
+    let targetAwayTeamId: string | null = null;
+
+    setMatches((prev) => {
+      let updatedMatch: Match | undefined;
+      const next = prev.map((m) => {
+        if (m.id === matchId) {
+          updatedMatch = {
+            ...m,
+            home_score: homeScore,
+            away_score: awayScore,
+            status,
+            notes: notes !== undefined ? notes : m.notes,
+            penalty_home_score:
+              penaltyHomeScore !== undefined
+                ? penaltyHomeScore
+                : m.penalty_home_score,
+            penalty_away_score:
+              penaltyAwayScore !== undefined
+                ? penaltyAwayScore
+                : m.penalty_away_score,
+            updated_at: new Date().toISOString(),
+          };
+          targetHomeTeamId = updatedMatch.home_team_id;
+          targetAwayTeamId = updatedMatch.away_team_id;
+          return updatedMatch;
+        }
+        return m;
+      });
+
+      // If match is completed and stage is knockout, advance the winner!
+      if (
+        updatedMatch &&
+        status === 'completed' &&
+        (updatedMatch.stage === 'quarter_final' ||
+          updatedMatch.stage === 'semi_final')
+      ) {
+        let winnerId: string | null = null;
+        if (homeScore > awayScore) {
+          winnerId = updatedMatch.home_team_id;
+        } else if (awayScore > homeScore) {
+          winnerId = updatedMatch.away_team_id;
+        } else {
+          // Tiebreaker via penalties
+          const pHome = penaltyHomeScore ?? updatedMatch.penalty_home_score ?? 0;
+          const pAway = penaltyAwayScore ?? updatedMatch.penalty_away_score ?? 0;
+          if (pHome > pAway) winnerId = updatedMatch.home_team_id;
+          else if (pAway > pHome) winnerId = updatedMatch.away_team_id;
+          else winnerId = updatedMatch.home_team_id;
+        }
+
+        if (winnerId && !winnerId.startsWith('tbd-')) {
+          const tourMatches = next.filter(
+            (m) => m.tournament_id === updatedMatch!.tournament_id
+          );
+          const currentStageMatches = tourMatches.filter(
+            (m) => m.stage === updatedMatch!.stage
+          );
+          const matchIndex = currentStageMatches.findIndex(
+            (m) => m.id === updatedMatch!.id
+          );
+
+          if (matchIndex >= 0) {
+            if (updatedMatch.stage === 'quarter_final') {
+              // QF0 & QF1 -> SF0; QF2 & QF3 -> SF1
+              const sfMatches = tourMatches.filter(
+                (m) => m.stage === 'semi_final'
+              );
+              const targetSfIndex = Math.floor(matchIndex / 2);
+              const isHomeSlot = matchIndex % 2 === 0;
+              const targetSf = sfMatches[targetSfIndex];
+              if (targetSf) {
+                targetSf.home_team_id = isHomeSlot
+                  ? winnerId
+                  : targetSf.home_team_id;
+                targetSf.away_team_id = !isHomeSlot
+                  ? winnerId
+                  : targetSf.away_team_id;
+              }
+            } else if (updatedMatch.stage === 'semi_final') {
+              // SF0 -> Final Home; SF1 -> Final Away
+              const finalMatch = tourMatches.find((m) => m.stage === 'final');
+              if (finalMatch) {
+                if (matchIndex === 0) finalMatch.home_team_id = winnerId;
+                else finalMatch.away_team_id = winnerId;
+              }
             }
-          : m
-      )
-    );
+          }
+        }
+      }
 
-    const match = matches.find((m) => m.id === matchId);
-    if (!match) return;
+      return next;
+    });
 
-    const homeTeam = teams.find((t) => t.id === match.home_team_id);
-    const awayTeam = teams.find((t) => t.id === match.away_team_id);
+    const homeTeam = teams.find((t) => t.id === targetHomeTeamId);
+    const awayTeam = teams.find((t) => t.id === targetAwayTeamId);
 
     // Notify captains of result update
     [homeTeam, awayTeam].forEach((team) => {
@@ -563,7 +659,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           user_id: team.captain_id,
           team_id: team.id,
           title: 'Match Result Updated',
-          message: `${homeTeam?.name} ${homeScore} - ${awayScore} ${awayTeam?.name}. Standings updated!`,
+          message: `${homeTeam?.name || 'Home'} ${homeScore} - ${awayScore} ${awayTeam?.name || 'Away'}. Standings updated!`,
           type: 'result',
           read: false,
           link: `/matches/${matchId}`,
@@ -585,13 +681,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     setMatchEvents((prev) => [...prev, newEvent]);
 
-    // If goal event, also ensure match score reflects it
-    if (newEvent.event_type === 'goal') {
-      const match = matches.find((m) => m.id === event.match_id);
-      if (match) {
+    const match = matches.find((m) => m.id === event.match_id);
+    if (match) {
+      if (newEvent.event_type === 'goal' || newEvent.event_type === 'penalty') {
         const isHome = match.home_team_id === event.team_id;
         const newHomeScore = isHome ? match.home_score + 1 : match.home_score;
         const newAwayScore = !isHome ? match.away_score + 1 : match.away_score;
+        updateMatchScore(match.id, newHomeScore, newAwayScore, match.status);
+      } else if (newEvent.event_type === 'own_goal') {
+        const isHome = match.home_team_id === event.team_id;
+        const newHomeScore = !isHome ? match.home_score + 1 : match.home_score;
+        const newAwayScore = isHome ? match.away_score + 1 : match.away_score;
         updateMatchScore(match.id, newHomeScore, newAwayScore, match.status);
       }
     }
@@ -600,7 +700,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   };
 
   const removeMatchEvent = (eventId: string) => {
+    const ev = matchEvents.find((e) => e.id === eventId);
+    if (!ev) return;
+
     setMatchEvents((prev) => prev.filter((e) => e.id !== eventId));
+
+    const match = matches.find((m) => m.id === ev.match_id);
+    if (match) {
+      if (ev.event_type === 'goal' || ev.event_type === 'penalty') {
+        const isHome = match.home_team_id === ev.team_id;
+        const newHomeScore = isHome ? Math.max(0, match.home_score - 1) : match.home_score;
+        const newAwayScore = !isHome ? Math.max(0, match.away_score - 1) : match.away_score;
+        updateMatchScore(match.id, newHomeScore, newAwayScore, match.status);
+      } else if (ev.event_type === 'own_goal') {
+        const isHome = match.home_team_id === ev.team_id;
+        const newHomeScore = !isHome ? Math.max(0, match.home_score - 1) : match.home_score;
+        const newAwayScore = isHome ? Math.max(0, match.away_score - 1) : match.away_score;
+        updateMatchScore(match.id, newHomeScore, newAwayScore, match.status);
+      }
+    }
   };
 
   const markNotificationRead = (id: string) => {
@@ -733,6 +851,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         removeTeamMember,
         registerTeamForTournament,
         updateRegistrationStatus,
+        updatePaymentStatus,
         generateFixturesForTournament,
         updateMatchScore,
         addMatchEvent,

@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useParams } from 'next/navigation';
+import React, { useState, Suspense } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   Users,
@@ -13,10 +13,62 @@ import {
   AlertCircle,
   Calendar,
   X,
+  Edit3,
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
-import { PlayerPosition } from '@/types';
+import { PlayerPosition, Team } from '@/types';
 import { formatDate } from '@/lib/utils';
+
+const CREST_EMOJIS = ['⚡', '🐂', '🎯', '🌊', '🦅', '🦁', '🐺', '🔥', '⚔️', '🛡️', '👑', '⭐'];
+
+function InviteBanner({ team, onJoin }: { team: Team; onJoin: () => void }) {
+  const searchParams = useSearchParams();
+  const isInvite = searchParams.get('invite') !== null;
+  const { currentUser, teamMembers } = useStore();
+
+  if (!isInvite) return null;
+
+  const isAlreadyMember = teamMembers.some(
+    (m) => m.team_id === team.id && m.user_id === currentUser?.id
+  );
+
+  if (isAlreadyMember) return null;
+
+  return (
+    <div className="p-4 rounded-2xl border border-emerald-500/40 bg-emerald-950/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-lg animate-in fade-in">
+      <div>
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
+          <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+            Official Squad Invitation
+          </span>
+        </div>
+        <h3 className="text-sm font-bold text-white mt-1">
+          You have been invited to join {team.name}!
+        </h3>
+        <p className="text-xs text-zinc-300 mt-0.5">
+          Select your jersey number and position to register yourself directly onto the team roster.
+        </p>
+      </div>
+
+      {currentUser ? (
+        <button
+          onClick={onJoin}
+          className="px-5 py-2.5 rounded-xl bg-emerald-500 font-bold text-xs text-zinc-950 hover:bg-emerald-400 transition-all shadow-md whitespace-nowrap"
+        >
+          Accept Invite &amp; Join Roster
+        </button>
+      ) : (
+        <Link
+          href="/auth/login"
+          className="px-5 py-2.5 rounded-xl bg-emerald-500 font-bold text-xs text-zinc-950 hover:bg-emerald-400 transition-all shadow-md whitespace-nowrap"
+        >
+          Sign In to Accept
+        </Link>
+      )}
+    </div>
+  );
+}
 
 export default function TeamProfilePage() {
   const params = useParams();
@@ -30,9 +82,12 @@ export default function TeamProfilePage() {
     matches,
     addTeamMember,
     removeTeamMember,
+    updateTeam,
   } = useStore();
 
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
   // Form states for adding player
@@ -43,7 +98,17 @@ export default function TeamProfilePage() {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
+  // Form states for joining squad
+  const [joinPosition, setJoinPosition] = useState<PlayerPosition>('MID');
+  const [joinJersey, setJoinJersey] = useState<number>(7);
+
   const team = teams.find((t) => t.id === teamId || t.slug === teamId);
+
+  // Edit club state
+  const [editName, setEditName] = useState(team?.name || '');
+  const [editCrest, setEditCrest] = useState(team?.crest_url || '⚡');
+  const [editBio, setEditBio] = useState(team?.bio || '');
+  const [editSquadLimit, setEditSquadLimit] = useState(team?.squad_limit || 22);
 
   if (!team) {
     return (
@@ -130,8 +195,46 @@ export default function TeamProfilePage() {
     }, 1200);
   };
 
+  const handleSaveClubProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editName.trim()) return;
+    updateTeam(team.id, {
+      name: editName.trim(),
+      crest_url: editCrest,
+      bio: editBio.trim(),
+      squad_limit: Number(editSquadLimit) || 22,
+    });
+    setIsEditModalOpen(false);
+  };
+
+  const handleJoinSquad = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    if (roster.length >= team.squad_limit) {
+      alert(`Squad limit of ${team.squad_limit} players reached.`);
+      return;
+    }
+    const numberTaken = roster.some((m) => m.jersey_number === Number(joinJersey));
+    if (numberTaken) {
+      alert(`Jersey #${joinJersey} is already taken in this squad.`);
+      return;
+    }
+    addTeamMember(team.id, {
+      fullName: currentUser.full_name,
+      email: currentUser.email,
+      position: joinPosition,
+      jerseyNumber: Number(joinJersey),
+      role: 'player',
+    });
+    setIsJoinModalOpen(false);
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10 space-y-10 pb-20">
+      <Suspense fallback={null}>
+        <InviteBanner team={team} onJoin={() => setIsJoinModalOpen(true)} />
+      </Suspense>
+
       {/* Header Profile Card */}
       <div className="rounded-3xl border border-zinc-800 bg-zinc-900/80 p-6 sm:p-10 shadow-2xl space-y-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
@@ -179,13 +282,29 @@ export default function TeamProfilePage() {
               </button>
 
               {canManage && (
-                <button
-                  onClick={() => setIsInviteModalOpen(true)}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 font-bold text-xs text-zinc-950 hover:bg-emerald-400 transition-colors shadow-md"
-                >
-                  <UserPlus className="h-4 w-4" />
-                  Add Player
-                </button>
+                <>
+                  <button
+                    onClick={() => {
+                      setEditName(team.name);
+                      setEditCrest(team.crest_url);
+                      setEditBio(team.bio);
+                      setEditSquadLimit(team.squad_limit);
+                      setIsEditModalOpen(true);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-700 bg-zinc-800 text-xs font-semibold text-zinc-200 hover:bg-zinc-700 transition-colors"
+                  >
+                    <Edit3 className="h-3.5 w-3.5 text-emerald-400" />
+                    Edit Club
+                  </button>
+
+                  <button
+                    onClick={() => setIsInviteModalOpen(true)}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 font-bold text-xs text-zinc-950 hover:bg-emerald-400 transition-colors shadow-md"
+                  >
+                    <UserPlus className="h-4 w-4" />
+                    Add Player
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -485,6 +604,183 @@ export default function TeamProfilePage() {
                   className="px-5 py-2 rounded-lg bg-emerald-500 font-bold text-xs text-zinc-950 hover:bg-emerald-400 transition-colors shadow-md"
                 >
                   Add Player
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Club Profile Modal */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="relative w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl text-zinc-100 space-y-4">
+            <button
+              onClick={() => setIsEditModalOpen(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                Captain / Management Console
+              </span>
+              <h3 className="text-lg font-bold text-white mt-0.5">
+                Edit Club Profile
+              </h3>
+            </div>
+
+            <form onSubmit={handleSaveClubProfile} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-zinc-300 mb-1">
+                  Club Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-zinc-300 mb-1">
+                  Select Crest Emoji
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {CREST_EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => setEditCrest(emoji)}
+                      className={`h-9 w-9 rounded-lg text-lg flex items-center justify-center border transition-all ${
+                        editCrest === emoji
+                          ? 'border-emerald-500 bg-emerald-500/20'
+                          : 'border-zinc-700 bg-zinc-800'
+                      }`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-zinc-300 mb-1">
+                  Club Bio &amp; Tactical Philosophy
+                </label>
+                <textarea
+                  rows={3}
+                  value={editBio}
+                  onChange={(e) => setEditBio(e.target.value)}
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-800 p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-zinc-300 mb-1">
+                  Maximum Squad Size Limit
+                </label>
+                <input
+                  type="number"
+                  min={11}
+                  max={30}
+                  value={editSquadLimit}
+                  onChange={(e) => setEditSquadLimit(Number(e.target.value))}
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="px-4 py-2 rounded-lg text-xs font-semibold text-zinc-400 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-lg bg-emerald-500 font-bold text-xs text-zinc-950 hover:bg-emerald-400 transition-colors shadow-md"
+                >
+                  Save Profile
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Join Squad via Shareable Link Modal */}
+      {isJoinModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="relative w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl text-zinc-100 space-y-4">
+            <button
+              onClick={() => setIsJoinModalOpen(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                Squad Invitation
+              </span>
+              <h3 className="text-lg font-bold text-white mt-0.5">
+                Join {team.name}
+              </h3>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Joining as <strong className="text-white">{currentUser?.full_name}</strong> ({currentUser?.email})
+              </p>
+            </div>
+
+            <form onSubmit={handleJoinSquad} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-zinc-300 mb-1">
+                  Select Your Position
+                </label>
+                <select
+                  value={joinPosition}
+                  onChange={(e) => setJoinPosition(e.target.value as PlayerPosition)}
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="GK">Goalkeeper (GK)</option>
+                  <option value="DEF">Defender (DEF)</option>
+                  <option value="MID">Midfielder (MID)</option>
+                  <option value="FWD">Forward (FWD)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-zinc-300 mb-1">
+                  Jersey Number
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={99}
+                  required
+                  value={joinJersey}
+                  onChange={(e) => setJoinJersey(Number(e.target.value))}
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setIsJoinModalOpen(false)}
+                  className="px-4 py-2 rounded-lg text-xs font-semibold text-zinc-400 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-lg bg-emerald-500 font-bold text-xs text-zinc-950 hover:bg-emerald-400 transition-colors shadow-md"
+                >
+                  Confirm &amp; Join Roster
                 </button>
               </div>
             </form>

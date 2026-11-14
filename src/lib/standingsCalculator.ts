@@ -1,7 +1,7 @@
 import { Match, StandingRow, Team } from '@/types';
 
 /**
- * Calculates league standings table based on teams and completed matches.
+ * Calculates league standings table based on teams and completed regular/group matches.
  * Standard football rules:
  * - Win = 3 points
  * - Draw = 1 point
@@ -11,7 +11,8 @@ import { Match, StandingRow, Team } from '@/types';
  * 1. Total Points
  * 2. Goal Difference (GF - GA)
  * 3. Goals For (GF)
- * 4. Team Name (Alphabetical)
+ * 4. Head-to-Head result
+ * 5. Team Name (Alphabetical)
  */
 export function calculateStandings(
   teams: Team[],
@@ -38,9 +39,13 @@ export function calculateStandings(
     });
   });
 
-  // Filter completed matches sorted chronologically
+  // Filter completed matches sorted chronologically, excluding knockout elimination matches
   const completedMatches = matches
-    .filter((m) => m.status === 'completed')
+    .filter(
+      (m) =>
+        m.status === 'completed' &&
+        (m.stage === 'regular' || m.stage === 'group' || !m.stage)
+    )
     .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
 
   // Accumulate match results
@@ -83,12 +88,30 @@ export function calculateStandings(
     away.goal_difference = away.goals_for - away.goals_against;
   });
 
-  // Convert to array and sort
+  // Convert to array
   const standingsArray = Array.from(standingsMap.values()).map((row) => ({
     ...row,
     // Keep last 5 form results
     form: row.form.slice(-5),
   }));
+
+  // Helper: head-to-head points between two teams
+  const getH2HPoints = (teamAId: string, teamBId: string) => {
+    let aPoints = 0;
+    let bPoints = 0;
+    completedMatches.forEach((m) => {
+      if (m.home_team_id === teamAId && m.away_team_id === teamBId) {
+        if (m.home_score > m.away_score) aPoints += 3;
+        else if (m.home_score < m.away_score) bPoints += 3;
+        else { aPoints += 1; bPoints += 1; }
+      } else if (m.home_team_id === teamBId && m.away_team_id === teamAId) {
+        if (m.home_score > m.away_score) bPoints += 3;
+        else if (m.home_score < m.away_score) aPoints += 3;
+        else { aPoints += 1; bPoints += 1; }
+      }
+    });
+    return { aPoints, bPoints };
+  };
 
   standingsArray.sort((a, b) => {
     if (b.points !== a.points) {
@@ -99,6 +122,11 @@ export function calculateStandings(
     }
     if (b.goals_for !== a.goals_for) {
       return b.goals_for - a.goals_for;
+    }
+    // Head-to-head resolution
+    const h2h = getH2HPoints(a.team_id, b.team_id);
+    if (h2h.aPoints !== h2h.bPoints) {
+      return h2h.bPoints - h2h.aPoints;
     }
     return a.team_name.localeCompare(b.team_name);
   });

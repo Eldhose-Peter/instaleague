@@ -152,10 +152,17 @@ export default function MatchDetailPage() {
             {/* Score / VS Center */}
             <div className="col-span-1 flex flex-col items-center justify-center">
               {isCompleted || isLive ? (
-                <div className="flex items-center gap-3 rounded-2xl bg-zinc-950 px-4 py-2 border border-zinc-800 font-mono text-3xl sm:text-5xl font-black text-white shadow-inner">
-                  <span>{match.home_score}</span>
-                  <span className="text-zinc-600">:</span>
-                  <span>{match.away_score}</span>
+                <div className="flex flex-col items-center">
+                  <div className="flex items-center gap-3 rounded-2xl bg-zinc-950 px-4 py-2 border border-zinc-800 font-mono text-3xl sm:text-5xl font-black text-white shadow-inner">
+                    <span>{match.home_score}</span>
+                    <span className="text-zinc-600">:</span>
+                    <span>{match.away_score}</span>
+                  </div>
+                  {match.penalty_home_score !== undefined && match.penalty_away_score !== undefined && (
+                    <div className="mt-2 text-[11px] font-bold text-amber-400 bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-500/30 whitespace-nowrap">
+                      ({match.penalty_home_score} - {match.penalty_away_score} pens)
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="rounded-xl bg-zinc-800 px-4 py-2 text-sm sm:text-base font-black text-zinc-400">
@@ -242,6 +249,12 @@ export default function MatchDetailPage() {
                     <div className="flex items-center gap-1.5 justify-end">
                       {ev.event_type === 'goal' && (
                         <span className="text-sm font-bold text-emerald-400">⚽ GOAL!</span>
+                      )}
+                      {ev.event_type === 'penalty' && (
+                        <span className="text-sm font-bold text-teal-400">🎯 PENALTY GOAL!</span>
+                      )}
+                      {ev.event_type === 'own_goal' && (
+                        <span className="text-sm font-bold text-rose-400">🤦 OWN GOAL</span>
                       )}
                       {ev.event_type === 'yellow_card' && (
                         <span className="h-4 w-3 rounded-xs bg-amber-400 inline-block shadow-sm" />

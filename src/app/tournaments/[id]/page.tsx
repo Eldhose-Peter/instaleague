@@ -267,8 +267,33 @@ export default function TournamentDetailPage() {
         {/* Tab 1: Standings or Knockout Bracket */}
         {activeTab === 'standings' && (
           <div className="space-y-6">
-            {isKnockout ? (
+            {tournament.format === 'knockout' ? (
               <KnockoutBracket matches={tournamentMatches} teams={participatingTeams} />
+            ) : tournament.format === 'group_knockout' ? (
+              <div className="space-y-10">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-md bg-emerald-500/20 px-2 py-0.5 text-xs font-bold text-emerald-400 border border-emerald-500/30 uppercase">
+                      Stage 1
+                    </span>
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-200">
+                      Group Stage Standings &amp; Points Table
+                    </h3>
+                  </div>
+                  <StandingsTable standings={standings} tournamentName={tournament.name} />
+                </div>
+                <div className="space-y-4 pt-6 border-t border-zinc-800">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-md bg-amber-500/20 px-2 py-0.5 text-xs font-bold text-amber-400 border border-amber-500/30 uppercase">
+                      Stage 2
+                    </span>
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-amber-300">
+                      Championship Knockout Bracket
+                    </h3>
+                  </div>
+                  <KnockoutBracket matches={tournamentMatches} teams={participatingTeams} />
+                </div>
+              </div>
             ) : (
               <StandingsTable
                 standings={standings}

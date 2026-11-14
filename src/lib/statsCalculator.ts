@@ -23,7 +23,7 @@ export function calculateTopScorers(
 
   // Count goals and assists
   events.forEach((ev) => {
-    if (ev.event_type === 'goal' && ev.player_id) {
+    if ((ev.event_type === 'goal' || ev.event_type === 'penalty') && ev.player_id) {
       const current = goalCounts.get(ev.player_id) || { goals: 0, assists: 0 };
       current.goals += 1;
       goalCounts.set(ev.player_id, current);
@@ -170,6 +170,9 @@ export function calculateCleanSheets(
         }
       });
 
+    // Only include goalkeepers whose team participated in completed matches
+    if (matchesPlayed === 0) return;
+
     rows.push({
       player_id: profile.id,
       player_name: profile.full_name,
@@ -187,7 +190,10 @@ export function calculateCleanSheets(
     if (b.clean_sheets !== a.clean_sheets) {
       return b.clean_sheets - a.clean_sheets;
     }
-    return a.goals_conceded - b.goals_conceded;
+    if (a.goals_conceded !== b.goals_conceded) {
+      return a.goals_conceded - b.goals_conceded;
+    }
+    return b.matches_played - a.matches_played;
   });
 }
 

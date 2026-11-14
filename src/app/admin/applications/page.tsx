@@ -18,6 +18,7 @@ export default function AdminApplicationsPage() {
     tournaments,
     teams,
     updateRegistrationStatus,
+    updatePaymentStatus,
   } = useStore();
 
   const [selectedTournament, setSelectedTournament] = useState<string>('all');
@@ -108,6 +109,7 @@ export default function AdminApplicationsPage() {
                 <th scope="col" className="py-3 px-4">Club</th>
                 <th scope="col" className="py-3 px-4">Tournament</th>
                 <th scope="col" className="py-3 px-4 text-center">Applied Date</th>
+                <th scope="col" className="py-3 px-4 text-center">Entry Fee</th>
                 <th scope="col" className="py-3 px-4 text-center">Status</th>
                 <th scope="col" className="py-3 px-4 text-right">Review Action</th>
               </tr>
@@ -152,6 +154,25 @@ export default function AdminApplicationsPage() {
 
                     <td className="py-3.5 px-4 text-center text-zinc-400">
                       {formatDate(reg.registered_at)}
+                    </td>
+
+                    <td className="py-3.5 px-4 text-center">
+                      <button
+                        onClick={() =>
+                          updatePaymentStatus(
+                            reg.id,
+                            reg.payment_status === 'paid' ? 'unpaid' : 'paid'
+                          )
+                        }
+                        title="Click to toggle payment status"
+                        className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase transition-all ${
+                          reg.payment_status === 'paid'
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
+                        }`}
+                      >
+                        {reg.payment_status === 'paid' ? 'Paid' : 'Unpaid'}
+                      </button>
                     </td>
 
                     <td className="py-3.5 px-4 text-center">

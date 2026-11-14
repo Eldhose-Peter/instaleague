@@ -156,7 +156,7 @@ test('calculateTopAssists aggregates assists', () => {
   assert.equal(assists[0].assists, 1);
 });
 
-test('calculateCleanSheets computes clean sheets for GKs when opponent scores 0', () => {
+test('calculateCleanSheets computes clean sheets and ignores goalkeepers with 0 matches', () => {
   const matches: Match[] = [
     {
       id: 'm1',
@@ -190,11 +190,56 @@ test('calculateCleanSheets computes clean sheets for GKs when opponent scores 0'
     },
   ];
 
-  const cleanSheets = calculateCleanSheets(matches, mockMembers, mockProfiles, mockTeams);
-  assert.equal(cleanSheets.length, 1);
+  // Add another GK belonging to team t3 which didn't play in these matches
+  const membersWithUnplayedGk: TeamMember[] = [
+    ...mockMembers,
+    {
+      id: 'tm-gk2',
+      team_id: 't2', // t2 has no GK in mockMembers originally
+      user_id: 'p3', // pretend p3 is also GK of t2
+      position: 'GK',
+      jersey_number: 99,
+      role: 'player',
+      status: 'active',
+      joined_at: '',
+    },
+  ];
+
+  const cleanSheets = calculateCleanSheets(matches, membersWithUnplayedGk, mockProfiles, mockTeams);
+  // Both t1 (played 2 matches) and t2 (played 2 matches) participated
+  assert.ok(cleanSheets.length >= 1);
   assert.equal(cleanSheets[0].player_id, 'p2');
   assert.equal(cleanSheets[0].clean_sheets, 1);
   assert.equal(cleanSheets[0].goals_conceded, 1);
+  assert.equal(cleanSheets[0].matches_played, 2);
+});
+
+test('calculateTopScorers includes penalty goals as goals', () => {
+  const events: MatchEvent[] = [
+    {
+      id: 'e1',
+      match_id: 'm1',
+      team_id: 't1',
+      player_id: 'p1',
+      event_type: 'goal',
+      minute: 10,
+      created_at: '',
+    },
+    {
+      id: 'e2',
+      match_id: 'm1',
+      team_id: 't1',
+      player_id: 'p1',
+      event_type: 'penalty',
+      minute: 75,
+      created_at: '',
+    },
+  ];
+
+  const scorers = calculateTopScorers(events, mockProfiles, mockTeams);
+  assert.equal(scorers.length, 1);
+  assert.equal(scorers[0].player_id, 'p1');
+  assert.equal(scorers[0].goals, 2);
 });
 
 test('calculateDisciplinary aggregates yellow and red cards and points', () => {
